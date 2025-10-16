@@ -20,7 +20,7 @@ It involves a full data science workflow, from exploratory data analysis (EDA) t
 
 🧩 Features
 
-Detailed EDA including correlation heatmaps, missing value analysis, and feature importance
+Detailed EDA including missing value analysis, and feature importance
 
 Implementation of Random Forest Classifier and other ML algorithms
 
