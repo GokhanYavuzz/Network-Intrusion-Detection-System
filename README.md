@@ -1,5 +1,7 @@
 🧠 Network Intrusion Detection System (NIDS) – Machine Learning Approach
+
 📄 Overview
+
 
 This project aims to build a Network Intrusion Detection System (NIDS) using machine learning algorithms to identify and classify various types of network attacks based on the UNSW-NB15 dataset.
 It involves a full data science workflow, from exploratory data analysis (EDA) to model training, optimization, and evaluation.
