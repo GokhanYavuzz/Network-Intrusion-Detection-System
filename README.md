@@ -41,7 +41,7 @@ It covers the complete data science pipeline — from **data exploration and pre
 Clone the repository:
 
 ```bash
-git clone https://github.com/yourusername/nids-adversarial.git
+git clone https://github.com/GokhanYavuzz/Network-Intrusion-Detection-System.git
 cd nids-adversarial
 ```
 
