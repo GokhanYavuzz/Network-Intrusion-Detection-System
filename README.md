@@ -1,95 +1,90 @@
-🧠 Network Intrusion Detection System (NIDS) – Machine Learning Approach
-
-📄 Overview
+# 🧠 Network Intrusion Detection System (NIDS) – Machine Learning Approach
 
 
-This project aims to build a Network Intrusion Detection System (NIDS) using machine learning algorithms to identify and classify various types of network attacks based on the UNSW-NB15 dataset.
-It involves a full data science workflow, from exploratory data analysis (EDA) to model training, optimization, and evaluation.
+## 📄 Overview
 
-📊 Project Structure
 
-├── EDA.ipynb                   # Exploratory Data Analysis: data cleaning, visualization, and feature insights
+This project develops a **Network Intrusion Detection System (NIDS)** using **machine learning** to detect and classify various network attacks on the **UNSW-NB15 dataset**.
 
-├── ML_Model_Building_.ipynb    # Model training, hyperparameter tuning, evaluation metrics
+It covers the complete data science pipeline — from **data exploration and preprocessing** to **model training**, **hyperparameter optimization**, and **attack-type-based performance evaluation**.
 
-├── requirements.txt            # Required Python packages
+---
 
-├── .gitignore                  # Files and folders to ignore in Git
+## 📊 Project Structure
 
-├── LICENSE                     # License for the project
+```
+├── EDA.ipynb                      # Exploratory Data Analysis: cleaning, visualization, and feature insights
+├── ML_Model_Building_.ipynb       # Model training, feature scaling, balancing, and hyperparameter tuning
+├── detection_by_attack_type.ipynb # Evaluation of model performance per attack type (DoS, Exploit, Fuzzers, etc.)
+├── requirements.txt               # Required Python packages
+├── .gitignore                     # Files and folders to ignore in Git
+├── LICENSE                        # License for the project
+└── README.md                      # Project documentation
+```
 
-└── README.md                   # Project documentation
+---
 
-🧩 Features
+## 🧩 Features
 
-Detailed EDA including missing value analysis, and feature importance
+* In-depth EDA with correlation heatmaps, feature selection, and class distribution analysis
+* Implementation of **Random Forest**, **Decision Tree**, and **Logistic Regression** classifiers
+* **SMOTE** balancing to handle imbalanced attack classes
+* **GridSearchCV**-based hyperparameter optimization
+* Attack-type breakdown via `detection_by_attack_type.ipynb`
+* Evaluation with **Accuracy**, **Precision**, **Recall**, **F1-Score**, and **ROC-AUC** metrics
+* Modular Jupyter notebooks for transparency and reproducibility
 
-Implementation of Random Forest Classifier and other ML algorithms
+---
 
-Class balancing using imblearn to address data imbalance
-
-Model evaluation with cross-validation, accuracy, precision, recall, F1-score, and ROC-AUC
-
-Modular design for easy experimentation and reproducibility
-
-⚙️ Installation
+## ⚙️ Installation
 
 Clone the repository:
 
+```bash
 git clone https://github.com/yourusername/nids-adversarial.git
-
 cd nids-adversarial
+```
 
+Install dependencies:
 
-Install the required packages:
-
+```bash
 pip install -r requirements.txt
+```
 
-🚀 How to Run
+---
 
-Launch Jupyter Notebook:
-
-jupyter notebook
-
-
-Open and run notebooks in order:
+## 🚀 How to Run
 
 
-EDA.ipynb
+1. Launch Jupyter Notebook:
+   
 
-ML_Model_Building_.ipynb
+2. Run notebooks **in the following order**:
+   
 
+   1. `EDA.ipynb` – Data preprocessing & visualization
+   2. `ML_Model_Building_.ipynb` – Model training & evaluation
+   3. `detection_by_attack_type.ipynb` – Analyze per-attack performance
 
-📦 Dependencies
+---
 
-The main libraries used in this project:
+## 📦 Dependencies
 
-pandas
+Core libraries used:
 
-numpy
+* `pandas`, `numpy`
+* `scikit-learn`
+* `imbalanced-learn`
+* `matplotlib`, `seaborn`
+* `tqdm`
+* `jupyter / notebook`
 
-scikit-learn
+*(Full list in `requirements.txt`.)*
 
-imbalanced-learn
+---
 
-matplotlib
+## 📈 Results
 
-tqdm
-
-jupyter / notebook
-
-(See requirements.txt for full list.)
-
-📈 Results
-
-Achieved high accuracy and robust generalization in detecting various network attack categories.
-
-Visualizations illustrate feature distributions and model performance across different classes.
-
-📜 License
-
-This project is licensed under the terms specified in the LICENSE file.
-
-👤 Author
-
-Gökhan Yavuz
+* Achieved **high detection accuracy** across multiple attack types
+* Visual comparisons of **true vs predicted labels** and **confusion matrices**
+* Performance visualization for each attack category improves interpretability
