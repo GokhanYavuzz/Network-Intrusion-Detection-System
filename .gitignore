@@ -1,0 +1,26 @@
+# veri klasörleri
+data/
+datasets/
+input/
+outputs/
+
+# yaygın veri uzantıları
+*.csv
+*.tsv
+*.parquet
+*.feather
+*.xlsx
+*.zip
+*.7z
+*.rar
+*.pickle
+*.pkl
+*.npy
+*.npz
+
+# notebook ara dosyaları ve cache
+.ipynb_checkpoints/
+__pycache__/
+*.cache
+
+data/.gitkeep
