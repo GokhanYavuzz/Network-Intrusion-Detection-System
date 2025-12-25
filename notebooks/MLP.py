@@ -38,19 +38,19 @@ print("Veriler ölçeklendiriliyor ve Tensor'a dönüştürülüyor...")
 
 # Özellikleri ölçekleme (StandardScaler)
 scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train) 
-X_test_scaled = scaler.transform(X_test) 
+X_train_scaled = scaler.fit_transform(X_train) # Eğitim verisini standartlaştır
+X_test_scaled = scaler.transform(X_test) # Test verisini aynı scaler ile dönüştür
 
 # Numpy array'leri PyTorch Tensor'larına çevirme
-X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32).to(device)
+X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32).to(device) # Veriyi Tensor'a çevir ve ondalıklı yapıya çevir
 y_train_tensor = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1).to(device) # (N, 1) boyutu için
 
-X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32).to(device)
-y_test_tensor = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1).to(device)
+X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32).to(device) # Test verisini Tensor'a çevir 
+y_test_tensor = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1).to(device) # Düz sıra yerine 2D bir sütuna çevirir. Ham hali (y_test): [1, 0, 1, 0] -> Dönüşmüş hali: [[1], [0], [1], [0]]
 
 # DataLoader oluşturma (Batch işlemleri için)
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
-train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True) # Veri karıştırma ve batch'leme. Ram kullanımı için.
 
 # ==========================================
 # 4. MODEL MİMARİSİ (PyTorch)
@@ -60,7 +60,7 @@ class SurrogateMLP(nn.Module):
         super(SurrogateMLP, self).__init__()
         # Sklearn: hidden_layer_sizes=(128, 64)
         self.layer1 = nn.Linear(input_dim, 128)
-        self.relu1 = nn.ReLU()
+        self.relu1 = nn.ReLU()                                                  #BURADA NEDEN 2 TANE LAYER VAR DAHA FAZLA OLMALI DEĞİL Mİ?
         self.layer2 = nn.Linear(128, 64)
         self.relu2 = nn.ReLU()
         self.output = nn.Linear(64, 1) # Binary classification için tek çıktı
@@ -77,8 +77,8 @@ model = SurrogateMLP(input_dim).to(device)
 print(f"Model oluşturuldu: {model}")
 
 # Loss ve Optimizer
-criterion = nn.BCELoss() # Binary Cross Entropy
-optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=L2_REGULARIZATION)
+criterion = nn.BCELoss() # Hata yapması durumunda ceza gönderen Binary Cross Entropy Loss
+optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=L2_REGULARIZATION) # Adam optimizasyon algoritması, hatayı minimize eder
 
 # ==========================================
 # 5. EĞİTİM DÖNGÜSÜ
