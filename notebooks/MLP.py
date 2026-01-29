@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import time
 import torch
 import torch.nn as nn # PyTorch neural network modülü
 import torch.optim as optim # PyTorch optimizers
@@ -26,10 +27,10 @@ print("Veriler yükleniyor...")
 # Dosya yollarını kendi sisteminize göre güncelleyebilirsiniz
 
 # Orijinal notebooktaki yollar
-X_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\nids-adversarial\data\X_train.csv", low_memory=False)
-y_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\nids-adversarial\data\y_train.csv", low_memory=False)
-X_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\nids-adversarial\data\X_test.csv", low_memory=False)
-y_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\nids-adversarial\data\y_test.csv", low_memory=False)
+X_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\X_train.csv", low_memory=False)
+y_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\y_train.csv", low_memory=False)
+X_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\X_test.csv", low_memory=False)
+y_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\y_test.csv", low_memory=False)
 
 # ==========================================
 # 3. VERİ ÖN İŞLEME (StandardScaler & Tensor Dönüşümü)
@@ -43,10 +44,10 @@ X_test_scaled = scaler.transform(X_test) # Test verisini aynı scaler ile dönü
 
 # Numpy array'leri PyTorch Tensor'larına çevirme
 X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32).to(device) # Veriyi Tensor'a çevir ve ondalıklı yapıya çevir
-y_train_tensor = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1).to(device) # (N, 1) boyutu için
+y_train_tensor = torch.tensor(y_train.values, dtype=torch.float32).unsqueeze(1).to(device) # (N, 1) boyutu için
 
 X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32).to(device) # Test verisini Tensor'a çevir 
-y_test_tensor = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1).to(device) # Düz sıra yerine 2D bir sütuna çevirir. Ham hali (y_test): [1, 0, 1, 0] -> Dönüşmüş hali: [[1], [0], [1], [0]]
+y_test_tensor = torch.tensor(y_test.values, dtype=torch.float32).unsqueeze(1).to(device) # Düz sıra yerine 2D bir sütuna çevirir. Ham hali (y_test): [1, 0, 1, 0] -> Dönüşmüş hali: [[1], [0], [1], [0]]
 
 # DataLoader oluşturma (Batch işlemleri için)
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
@@ -71,85 +72,98 @@ class SurrogateMLP(nn.Module):
         x = self.relu2(self.layer2(x))
         x = self.sigmoid(self.output(x))
         return x
+if __name__ == "__main__":
+    print("MLP.py doğrudan çalıştırıldı, eğitim başlıyor...")
 
-input_dim = X_train.shape[1]
-model = SurrogateMLP(input_dim).to(device)
-print(f"Model oluşturuldu: {model}")
+    input_dim = X_train.shape[1]
+    model = SurrogateMLP(input_dim).to(device)
+    print(f"Model oluşturuldu: {model}")
 
-# Loss ve Optimizer
-criterion = nn.BCELoss() # Hata yapması durumunda ceza gönderen Binary Cross Entropy Loss
-optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=L2_REGULARIZATION) # Adam optimizasyon algoritması, hatayı minimize eder
+    # Loss ve Optimizer
+    criterion = nn.BCELoss() # Hata yapması durumunda ceza gönderen Binary Cross Entropy Loss
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE, weight_decay=L2_REGULARIZATION) # Adam optimizasyon algoritması, hatayı minimize eder
 
-# ==========================================
-# 5. EĞİTİM DÖNGÜSÜ
-# ==========================================
-print("Eğitim başlıyor...")
-loss_history = []
+    # ==========================================
+    # 5. EĞİTİM DÖNGÜSÜ
+    # ==========================================
+    print("Eğitim başlıyor...")
+    loss_history = []
 
-model.train()
-for epoch in range(EPOCHS):
-    epoch_loss = 0
-    for X_batch, y_batch in train_loader:
-        # 1. Gradiyentleri sıfırla
-        optimizer.zero_grad()
+    start_time = time.time() # Kronometreyi başlat (Toplam süre için)
+    epoch_start_time = time.time() # Her 5'lik blok için ara zamanlayıcı
+
+    model.train()
+    for epoch in range(EPOCHS):
+        epoch_loss = 0
+        for X_batch, y_batch in train_loader:
+            # 1. Gradiyentleri sıfırla
+            optimizer.zero_grad()
         
-        # 2. İleri besleme (Forward pass)
-        predictions = model(X_batch)
+            # 2. İleri besleme (Forward pass)
+            predictions = model(X_batch)
         
-        # 3. Hata hesaplama
-        loss = criterion(predictions, y_batch)
+            # 3. Hata hesaplama
+            loss = criterion(predictions, y_batch.view(-1, 1))
         
-        # 4. Geri yayılım (Backpropagation)
-        loss.backward()
+            # 4. Geri yayılım (Backpropagation)
+            loss.backward()
         
-        # 5. Ağırlıkları güncelle
-        optimizer.step()
-        
-        epoch_loss += loss.item()
+            # 5. Ağırlıkları güncelle
+            optimizer.step()
+
+            epoch_loss += loss.item()
+
+        avg_loss = epoch_loss / len(train_loader)
+        loss_history.append(avg_loss)
     
-    avg_loss = epoch_loss / len(train_loader)
-    loss_history.append(avg_loss)
-    
-    if (epoch + 1) % 5 == 0:
-        print(f"Epoch [{epoch+1}/{EPOCHS}], Loss: {avg_loss:.4f}")
+        if (epoch + 1) % 5 == 0:
+            current_time = time.time()
+            batch_time = current_time - epoch_start_time # Son 5 epoch ne kadar sürdü?
+            total_time = current_time - start_time       # Başlangıçtan beri ne kadar geçti?
+        
+            print(f"Epoch [{epoch+1}/{EPOCHS}] | "
+                  f"Loss: {avg_loss:.4f} | "
+                  f"Son 5 Epoch Süresi: {batch_time:.2f} sn | "
+                  f"Toplam Süre: {total_time:.2f} sn")
+        
+            # Ara zamanlayıcıyı sıfırla
+            epoch_start_time = current_time
 
-# Kayıp grafiğini çizme (İsteğe bağlı)
-plt.figure(figsize=(10,5))
-plt.plot(loss_history, label='Training Loss')
-plt.title('Eğitim Sürecinde Kayıp (Loss)')
-plt.xlabel('Epoch')
-plt.ylabel('Loss')
-plt.legend()
-plt.show()
+    # Kayıp grafiğini çizme (İsteğe bağlı)
+    plt.figure(figsize=(10,5))
+    plt.plot(loss_history, label='Training Loss')
+    plt.title('Eğitim Sürecinde Kayıp (Loss)')
+    plt.xlabel('Epoch')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
+    # ==========================================
+    # 6. DEĞERLENDİRME
+    # ==========================================
+    print("Test seti üzerinde değerlendirme yapılıyor...")
+    model.eval() # Değerlendirme modu (Dropout vs. kapatır)
 
-# ==========================================
-# 6. DEĞERLENDİRME
-# ==========================================
-print("Test seti üzerinde değerlendirme yapılıyor...")
-model.eval() # Değerlendirme modu (Dropout vs. kapatır)
+    with torch.no_grad():
+        y_pred_prob = model(X_test_tensor)
+        # Olasılıkları 0 veya 1'e yuvarla (Threshold 0.5)
+        y_pred = (y_pred_prob > 0.5).float().cpu().numpy()
+        y_test_np = y_test_tensor.cpu().numpy()
+    # Raporlama
+    print("\nClassification Report:")
+    print(classification_report(y_test_np.flatten(), y_pred.flatten(), digits=4))
 
-with torch.no_grad():
-    y_pred_prob = model(X_test_tensor)
-    # Olasılıkları 0 veya 1'e yuvarla (Threshold 0.5)
-    y_pred = (y_pred_prob > 0.5).float().cpu().numpy()
-    y_test_np = y_test_tensor.cpu().numpy()
+    # Confusion Matrix
+    cm = confusion_matrix(y_test_np.flatten(), y_pred.flatten())
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+    plt.xlabel('Predicted')
+    plt.ylabel('Actual')
+    plt.title('Confusion Matrix (PyTorch MLP)')
+    plt.show()
 
-# Raporlama
-print("\nClassification Report:")
-print(classification_report(y_test_np, y_pred, digits=4))
-
-# Confusion Matrix
-cm = confusion_matrix(y_test_np, y_pred)
-plt.figure(figsize=(8, 6))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
-plt.xlabel('Predicted')
-plt.ylabel('Actual')
-plt.title('Confusion Matrix (PyTorch MLP)')
-plt.show()
-
-# ==========================================
-# 7. MODELİ KAYDETME (İsteğe bağlı)
-# ==========================================
-# GAN eğitimi sırasında tekrar yüklemek için:
-torch.save(model.state_dict(), "surrogate_mlp_model.pth")
-print("Model 'surrogate_mlp_model.pth' olarak kaydedildi.")
+    # ==========================================
+    # 7. MODELİ KAYDETME (İsteğe bağlı)
+    # ==========================================
+    # GAN eğitimi sırasında tekrar yüklemek için:
+    torch.save(model.state_dict(), "surrogate_mlp_model.pth")
+    print("Model 'surrogate_mlp_model.pth' olarak kaydedildi.")
