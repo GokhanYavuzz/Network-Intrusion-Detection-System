@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
-from MLP import SurrogateMLP
-from sklearn.model_selection import train_test_split  
+from MLP import SurrogateMLP 
 import pandas as pd
 import numpy as np
 import os
@@ -90,7 +89,7 @@ class Discriminator(nn.Module):
     def forward(self, x):
         return self.net(x)
     
-    # Hyperparameters
+# Hyperparameters
 lambda_gan = 0.5   # Importance of looking like Normal traffic (Discriminator)
 lambda_adv = 1.0   # Importance of fooling the IDS (Surrogate)
 
@@ -107,15 +106,19 @@ optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002)
 # Loss functions
 criterion_gan = nn.BCELoss() # Binary Cross Entropy for Real vs Fake
 
+X_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\X_train_fuzzer.csv", low_memory=False)
+y_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\y_train_fuzzer.csv", low_memory=False)
+X_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\X_test_fuzzer.csv", low_memory=False)
+y_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\y_test_fuzzer.csv", low_memory=False)
+
 # ==========================================
-# 1. AYARLAR VE İMPORTLAR
+# 1. AYARLAR
 # ==========================================
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Kullanılan cihaz: {device}")
 
 # MLP.py dosyasını import edebilmek için yol ayarı
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from MLP import SurrogateMLP  # Senin istediğin yöntem
 
 # Hiperparametreler
 INPUT_DIM = 59  # MLP ile aynı (59)
@@ -125,87 +128,23 @@ LR = 0.0002
 EPOCHS = 50
 
 # ==========================================
-# 2. VERİ YÜKLEME VE HAZIRLIK
-# ==========================================
-# ==========================================
-# 1. DOSYA AYARLARI
-# ==========================================
-# Elindeki birleşik dosyanın yolu:
-
-print("Dosya okunuyor...")
-df = pd.read_csv('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\with_attack_cat_clear_data.csv', low_memory=False)
-
-df['attack_cat'] = df['attack_cat'].str.strip()
-
-# ==========================================
-# 2. FİLTRELEME (SADECE NORMAL VE FUZZERS)
-# ==========================================
-print("Veri seti filtreleniyor (Sadece Normal ve Fuzzers)...")
-
-# Saldırı türü sütununun adını kontrol et (Genelde 'attack_cat')
-# Eğer farklıysa burayı değiştir.
-attack_col = 'attack_cat' 
-
-# Sadece 'Normal' veya 'Fuzzers' içeren satırları seç
-# (str.contains kullanarak boşluk veya büyük/küçük harf hatalarını önlüyoruz)
-df_filtered = df[df[attack_col].astype(str).str.contains("Normal|Fuzzer", case=False, regex=True)].copy()
-
-print(f"Orijinal Veri Sayısı: {len(df)}")
-print(f"Filtrelenmiş Veri Sayısı: {len(df_filtered)}")
-print("Kalan Sınıflar:", df_filtered[attack_col].unique())
-
-# ==========================================
-# 3. ETİKETLEME (LABEL ENCODING)
-# ==========================================
-# MLP'nin anlayabilmesi için:
-# Normal -> 0
-# Fuzzers -> 1 yapmamız lazım.
-
-# Önce mevcut 'label' sütununu (varsa) düşürelim, biz kendimiz en doğrusunu oluşturacağız.
-if 'label' in df_filtered.columns:
-    df_filtered = df_filtered.drop(columns=['label'])
-
-# Yeni label oluşturma: Normal ise 0, değilse (Fuzzer) 1
-df_filtered['label'] = df_filtered[attack_col].apply(lambda x: 0 if 'Normal' in str(x) else 1)
-
-print("\nEtiketler güncellendi: Normal=0, Fuzzer=1")
-print(df_filtered[[attack_col, 'label']].value_counts())
-
-# ==========================================
-# 4. X ve y AYRIMI
-# ==========================================
-# Etiket sütunlarını X'ten çıkar
-y = df_filtered[[attack_col, 'label']] # Hem ismini hem 0/1 halini saklayalım
-X = df_filtered.drop(columns=[attack_col, 'label'])
-
-# ==========================================
-# 5. EĞİTİM / TEST BÖLME (%80 - %20)
-# ==========================================
-print("\nVeri bölünüyor (%80 Train - %20 Test)...")
-
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, 
-    test_size=0.20, 
-    random_state=42, 
-    stratify=y['label'] # Normal/Fuzzer oranı bozulmasın diye
-)
-
-# ==========================================
-# 6. KAYDETME
-# ==========================================
-print("Dosyalar kaydediliyor...")
-
-X_train.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "X_train_fuzzer.csv"), index=False)
-X_test.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "X_test_fuzzer.csv"), index=False)
-y_train.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "y_train_fuzzer.csv"), index=False)
-y_test.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "y_test_fuzzer.csv"), index=False)
-
-print("\nİŞLEM TAMAM! 🚀")
-print("Artık klasöründe sadece Normal ve Fuzzers içeren temiz X_train, y_train dosyaların var.")
 # Ölçekleme (StandardScaler)
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 df_features = pd.DataFrame(X_train_scaled, columns=X_train.columns)
+
+# --- !!! KRİTİK DÜZELTME BURADA YAPILDI !!! ---
+# y_train'in indeksini sıfırlıyoruz ki df_features (0,1,2...) ile uyuşsun
+y_train = y_train.reset_index(drop=True)
+# ----------------------------------------------
+
+# --- BOYUT KONTROLÜ ---
+REAL_INPUT_DIM = X_train.shape[1]
+print(f"Veri Seti Özellik Sayısı: {REAL_INPUT_DIM}")
+if REAL_INPUT_DIM != INPUT_DIM:
+    print(f"UYARI: Kodun başındaki INPUT_DIM={INPUT_DIM} ama veri setinde {REAL_INPUT_DIM} sütun var.")
+    print(f"INPUT_DIM otomatik olarak {REAL_INPUT_DIM} yapılıyor.")
+    INPUT_DIM = REAL_INPUT_DIM
 
 # --- NORMAL ve FUZZER AYRIMI ---
 # Eğer 'attack_cat' sütunu yoksa, label 1'i Fuzzer varsayacağız.
