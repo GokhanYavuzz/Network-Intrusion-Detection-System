@@ -94,14 +94,14 @@ lambda_gan = 0.5   # Importance of looking like Normal traffic (Discriminator)
 lambda_adv = 1.0   # Importance of fooling the IDS (Surrogate)
 
 # Instantiate models
-generator = Generator(input_dim=49)
-discriminator = Discriminator(input_dim=49)
+generator = Generator(input_dim=49) # Adjust input_dim based on your dataset
+discriminator = Discriminator(input_dim=49) # Adjust input_dim based on your dataset
 surrogate_mlp = SurrogateMLP(59) # Load your pretrained MLP here
 surrogate_mlp.eval() # Surrogate weights must be frozen!
 
 # Optimizers
-optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002)
-optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002)
+optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002) # Generator optimizer
+optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002) # Discriminator optimizer
 
 # Loss functions
 criterion_gan = nn.BCELoss() # Binary Cross Entropy for Real vs Fake
@@ -133,10 +133,8 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 df_features = pd.DataFrame(X_train_scaled, columns=X_train.columns)
 
-# --- !!! KRİTİK DÜZELTME BURADA YAPILDI !!! ---
 # y_train'in indeksini sıfırlıyoruz ki df_features (0,1,2...) ile uyuşsun
 y_train = y_train.reset_index(drop=True)
-# ----------------------------------------------
 
 # --- BOYUT KONTROLÜ ---
 REAL_INPUT_DIM = X_train.shape[1]
@@ -153,7 +151,6 @@ if 'attack_cat' in y_train.columns:
     normal_idx = y_train['attack_cat'] == 'Normal'
     fuzzer_idx = y_train['attack_cat'] == 'Fuzzers'
 
-
 X_normal = df_features[normal_idx].values
 X_fuzzer = df_features[fuzzer_idx].values
 
@@ -164,8 +161,7 @@ real_samples = torch.tensor(X_normal, dtype=torch.float32).to(device)
 fuzzer_samples = torch.tensor(X_fuzzer, dtype=torch.float32).to(device)
 
 # DataLoader (Discriminator'ın gerçek verisi için)
-# İşte hata veren 'get_batch_of_normal_data' yerine bunu kullanacağız
-train_loader = DataLoader(TensorDataset(real_samples), batch_size=BATCH_SIZE, shuffle=True)
+train_loader = DataLoader(TensorDataset(real_samples), batch_size=BATCH_SIZE, shuffle=True) # Sadece gerçek normal veriyi kullanır.
 
 # ==========================================
 # 3. GAN MODELLERİ
@@ -186,7 +182,7 @@ class Generator(nn.Module):
             nn.Linear(hidden_dim, input_dim) # Tanh yok, çünkü StandardScaler kullanıyoruz
         )
 
-    def forward(self, real_fuzzer_samples):
+    def forward(self, real_fuzzer_samples): 
         perturbation = self.net(real_fuzzer_samples)
         epsilon = 0.1 
         generated_sample = real_fuzzer_samples + (epsilon * perturbation)
@@ -215,7 +211,7 @@ discriminator = Discriminator(input_dim=INPUT_DIM).to(device)
 
 # --- SURROGATE MODEL YÜKLEME ---
 # Buradaki 59 sayısı önemli!
-surrogate_mlp = SurrogateMLP(INPUT_DIM).to(device) 
+surrogate_mlp = SurrogateMLP(INPUT_DIM).to(device) # Surrogate modelini başlat
 
 model_path = "surrogate_mlp_model.pth" # Ana klasörde arar
 if os.path.exists(model_path):
@@ -224,14 +220,9 @@ if os.path.exists(model_path):
 else:
     print(f"HATA: {model_path} bulunamadı! Lütfen önce MLP.py'yi çalıştırın.")
 
-surrogate_mlp.eval() # Polisin ağırlıklarını dondur
-for param in surrogate_mlp.parameters():
+surrogate_mlp.eval() # Değerlendirme moduna al. Ağırlıklar sabit kalacak.
+for param in surrogate_mlp.parameters(): 
     param.requires_grad = False
-
-# Optimizers & Loss
-optimizer_G = optim.Adam(generator.parameters(), lr=LR)
-optimizer_D = optim.Adam(discriminator.parameters(), lr=LR)
-criterion_gan = nn.BCELoss()
 
 # ==========================================
 # 4. EĞİTİM DÖNGÜSÜ

@@ -20,7 +20,7 @@ import seaborn as sns
 print("Dosya okunuyor...")
 df = pd.read_csv('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\with_attack_cat_clear_data.csv', low_memory=False)
 
-df['attack_cat'] = df['attack_cat'].str.strip()
+df['attack_cat'] = df['attack_cat'].str.strip() # Boşlukları temizle
 
 # ==========================================
 # 2. FİLTRELEME (SADECE NORMAL VE FUZZERS)
@@ -28,7 +28,6 @@ df['attack_cat'] = df['attack_cat'].str.strip()
 print("Veri seti filtreleniyor (Sadece Normal ve Fuzzers)...")
 
 # Saldırı türü sütununun adını kontrol et (Genelde 'attack_cat')
-# Eğer farklıysa burayı değiştir.
 attack_col = 'attack_cat' 
 
 # Sadece 'Normal' veya 'Fuzzers' içeren satırları seç
@@ -42,7 +41,6 @@ print("Kalan Sınıflar:", df_filtered[attack_col].unique())
 # ==========================================
 # 3. ETİKETLEME (LABEL ENCODING)
 # ==========================================
-# MLP'nin anlayabilmesi için:
 # Normal -> 0
 # Fuzzers -> 1 yapmamız lazım.
 
@@ -63,7 +61,6 @@ print(df_filtered[[attack_col, 'label']].value_counts())
 y = df_filtered[[attack_col, 'label']] # Hem ismini hem 0/1 halini saklayalım
 X = df_filtered.drop(columns=[attack_col, 'label'])
 
-# --- encoding (YENİ EKLENEN KISIM: Yazıları Sayıya Çevirme) ---
 print("Kategorik (yazı) sütunlar sayıya çevriliyor...")
 # Nesne (object) tipindeki yani yazı olan sütunları bul
 cat_cols = X.select_dtypes(include=['object']).columns
