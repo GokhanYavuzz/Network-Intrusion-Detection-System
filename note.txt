@@ -1,2 +1,3 @@
 30.01.2026
-bütün attacklarolsun
+bütün attacklar olsun
+MLP kısmını bütün attack_cat'ler olsun 
