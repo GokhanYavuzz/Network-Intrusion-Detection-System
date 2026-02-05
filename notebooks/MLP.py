@@ -12,67 +12,25 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 # ==========================================
-# 2. VERİ YÜKLEME VE HAZIRLIK
+# 1. VERİ YÜKLEME VE HAZIRLIK
 # ==========================================
 
 print("Dosya okunuyor...")
-df = pd.read_csv('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\with_attack_cat_clear_data.csv', low_memory=False)
+df = pd.read_csv('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\forSurrogatemodel.csv', low_memory=False)
 
 df['attack_cat'] = df['attack_cat'].str.strip() # Boşlukları temizle
 
-# ==========================================
-# 2. FİLTRELEME (SADECE NORMAL VE FUZZERS)
-# ==========================================
-print("Veri seti filtreleniyor (Sadece Normal ve Fuzzers)...")
+attack_col = 'attack_cat'
 
-# Saldırı türü sütununun adını kontrol et (Genelde 'attack_cat')
-attack_col = 'attack_cat' 
-
-# Sadece 'Normal' veya 'Fuzzers' içeren satırları seç
-# (str.contains kullanarak boşluk veya büyük/küçük harf hatalarını önlüyoruz)
-df_filtered = df[df[attack_col].astype(str).str.contains("Normal|Fuzzer", case=False, regex=True)].copy()
-
-print(f"Orijinal Veri Sayısı: {len(df)}")
-print(f"Filtrelenmiş Veri Sayısı: {len(df_filtered)}")
-print("Kalan Sınıflar:", df_filtered[attack_col].unique())
+df = df.drop(columns=['Label']) 
 
 # ==========================================
-# 3. ETİKETLEME (LABEL ENCODING)
-# ==========================================
-# Normal -> 0
-# Fuzzers -> 1 yapmamız lazım.
-
-# Önce mevcut 'label' sütununu (varsa) düşürelim, biz kendimiz en doğrusunu oluşturacağız.
-if 'label' in df_filtered.columns:
-    df_filtered = df_filtered.drop(columns=['label'])
-
-# Yeni label oluşturma: Normal ise 0, değilse (Fuzzer) 1
-df_filtered['label'] = df_filtered[attack_col].apply(lambda x: 0 if 'Normal' in str(x) else 1)
-
-print("\nEtiketler güncellendi: Normal=0, Fuzzer=1")
-print(df_filtered[[attack_col, 'label']].value_counts())
-
-# ==========================================
-# 4. X ve y AYRIMI
+# 2. X ve y AYRIMI
 # ==========================================
 # Etiket sütunlarını X'ten çıkar
-y = df_filtered[[attack_col, 'label']] # Hem ismini hem 0/1 halini saklayalım
-X = df_filtered.drop(columns=[attack_col, 'label'])
-
-print("Kategorik (yazı) sütunlar sayıya çevriliyor...")
-# Nesne (object) tipindeki yani yazı olan sütunları bul
-cat_cols = X.select_dtypes(include=['object']).columns
-
-if len(cat_cols) > 0:
-    print(f"Dönüştürülen sütunlar: {list(cat_cols)}")
-    for col in cat_cols:
-        le = LabelEncoder()
-        # Sütunu string'e çevirip encode ediyoruz (hatayı önlemek için)
-        X[col] = le.fit_transform(X[col].astype(str))
-else:
-    print("Dönüştürülecek metin sütunu bulunamadı (Zaten hepsi sayı).")
+y = df[[attack_col]]
+X = df.drop(columns=[attack_col])
 
 # ==========================================
 # 5. EĞİTİM / TEST BÖLME (%80 - %20)
@@ -83,21 +41,8 @@ X_train, X_test, y_train, y_test = train_test_split(
     X, y, 
     test_size=0.20, 
     random_state=42, 
-    stratify=y['label'] # Normal/Fuzzer oranı bozulmasın diye
+    stratify=y['Label'] # Stratify ile sınıf dağılımını koruyarak bölme
 )
-
-# ==========================================
-# 6. KAYDETME
-# ==========================================
-print("Dosyalar kaydediliyor...")
-
-X_train.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "X_train_fuzzer.csv"), index=False)
-X_test.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "X_test_fuzzer.csv"), index=False)
-y_train.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "y_train_fuzzer.csv"), index=False)
-y_test.to_csv(os.path.join('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\mlp_data', "y_test_fuzzer.csv"), index=False)
-
-print("\nİŞLEM TAMAM! 🚀")
-print("Artık klasöründe sadece Normal ve Fuzzers içeren temiz X_train, y_train dosyaların var.")
 
 # ==========================================
 # 1. AYARLAR VE CİHAZ SEÇİMİ
@@ -109,17 +54,8 @@ print(f"Kullanılan cihaz: {device}")
 # Hiperparametreler (Orijinal notebook ile uyumlu)
 BATCH_SIZE = 64 
 LEARNING_RATE = 1e-3 
-EPOCHS = 50 
+EPOCHS = 10
 L2_REGULARIZATION = 1e-4  # Sklearn'deki 'alpha' parametresi PyTorch'ta weight_decay'dir
-
-print("Veriler yükleniyor...")
-# Dosya yollarını kendi sisteminize göre güncelleyebilirsiniz
-
-# Orijinal notebooktaki yollar
-X_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\X_train_fuzzer.csv", low_memory=False)
-y_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\y_train_fuzzer.csv", low_memory=False)
-X_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\X_test_fuzzer.csv", low_memory=False)
-y_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\y_test_fuzzer.csv", low_memory=False)
 
 # ==========================================
 # 3. VERİ ÖN İŞLEME (StandardScaler & Tensor Dönüşümü)
@@ -133,10 +69,10 @@ X_test_scaled = scaler.transform(X_test) # Test verisini aynı scaler ile dönü
 
 # Numpy array'leri PyTorch Tensor'larına çevirme
 X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32).to(device) # Veriyi Tensor'a çevir ve ondalıklı yapıya çevir
-y_train_tensor = torch.tensor(y_train['label'].values, dtype=torch.float32).unsqueeze(1).to(device) # y_train içinden sadece 'label' sütununu al
+y_train_tensor = torch.tensor(y_train['Label'].values, dtype=torch.float32).unsqueeze(1).to(device) # y_train içinden sadece 'Label' sütununu al
 
 X_test_tensor = torch.tensor(X_test_scaled, dtype=torch.float32).to(device) # Test verisini Tensor'a çevir 
-y_test_tensor = torch.tensor(y_test['label'].values, dtype=torch.float32).unsqueeze(1).to(device) # y_test içinden sadece 'label' sütununu al
+y_test_tensor = torch.tensor(y_test['Label'].values, dtype=torch.float32).unsqueeze(1).to(device) # y_test içinden sadece 'Label' sütununu al
 
 # DataLoader oluşturma (Batch işlemleri için)
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
@@ -153,14 +89,15 @@ class SurrogateMLP(nn.Module):
         self.relu1 = nn.ReLU()                                                  #BURADA NEDEN 2 TANE LAYER VAR DAHA FAZLA OLMALI DEĞİL Mİ?
         self.layer2 = nn.Linear(128, 64)
         self.relu2 = nn.ReLU()
-        self.output = nn.Linear(64, 1) # Binary classification için tek çıktı
-        self.sigmoid = nn.Sigmoid()    # Olasılık değeri (0-1 arası)
+        self.output = nn.Linear(64, 11) 
+
 
     def forward(self, x):
         x = self.relu1(self.layer1(x))
         x = self.relu2(self.layer2(x))
-        x = self.sigmoid(self.output(x))
+        x = self.output(x)
         return x
+    
 if __name__ == "__main__":
     print("MLP.py doğrudan çalıştırıldı, eğitim başlıyor...")
 

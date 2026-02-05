@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from MLP import SurrogateMLP 
+from notebooks.MLP import SurrogateMLP 
 import pandas as pd
 import numpy as np
 import os
