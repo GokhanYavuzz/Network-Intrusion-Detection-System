@@ -1,6 +1,8 @@
+import json
+from sklearn.model_selection import train_test_split
 import torch
 import torch.nn as nn
-from notebooks.MLP import SurrogateMLP 
+from MLP import SurrogateMLP 
 import pandas as pd
 import numpy as np
 import os
@@ -8,6 +10,114 @@ import sys
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.preprocessing import StandardScaler
+import joblib
+
+# Hiperparametreler
+#INPUT_DIM = 43  # MLP ile aynı (43)
+HIDDEN_DIM = 64
+BATCH_SIZE = 64
+LR = 0.0002
+EPOCHS = 50
+
+df = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\with_attack_cat_clear_data.csv", low_memory=False)
+
+wanted = ["Generic", "Normal"]
+df_filtered = df[df["attack_cat"].isin(wanted)].copy()
+
+# kontrol
+print(df_filtered["attack_cat"].value_counts(dropna=False))
+
+# kaydetmek istersen
+df_filtered.to_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\dataset_generic_normal.csv", index=False)
+
+df_filtered = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\dataset_generic_normal.csv", low_memory=False)
+
+# 1) df_filtered kullanacaksan (attack_cat kolonu df icinde)
+X = df_filtered.drop(columns=["attack_cat"]).copy()
+y = df_filtered["attack_cat"].copy()
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y,
+    test_size=0.20,
+    random_state=42,
+    stratify=y
+)
+
+print("X toplam feature sayisi:", X.shape[1])
+print("X kolonlari:", len(X.columns))
+
+print("Train label dagilimi:\n", y_train.value_counts(normalize=True))
+print("Test  label dagilimi:\n", y_test.value_counts(normalize=True))
+
+
+# ==========================================
+# 1. AYARLAR
+# ==========================================
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Kullanılan cihaz: {device}")
+
+# MLP.py dosyasını import edebilmek için yol ayarı
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+# 1) Kategorik (string) kolonlari bul
+cat_cols = X_train.select_dtypes(include=["object", "category", "bool","string"]).columns.tolist()
+print("Kategorik kolonlar:", cat_cols)
+
+# 2) Kategorikleri sayisala cevir (train kategorilerine gore)
+for col in cat_cols:
+    train_cats = pd.Categorical(X_train[col]).categories
+    X_train[col] = pd.Categorical(X_train[col], categories=train_cats).codes
+    X_test[col]  = pd.Categorical(X_test[col],  categories=train_cats).codes
+
+    # NaN veya unseen -> -1, ayri bir kategori id yap
+    X_train.loc[X_train[col] == -1, col] = len(train_cats)
+    X_test.loc[X_test[col] == -1, col]   = len(train_cats)
+
+left = X_train.select_dtypes(include=["object", "string", "category"]).columns.tolist()
+print("Hala string kalanlar:", left)
+assert len(left) == 0, f"Scaler'a girmeden once string kolon var: {left}"
+
+# ==========================================
+
+X_train = X_train.reindex(columns=surrogate_cols, fill_value=0)
+X_test  = X_test.reindex(columns=surrogate_cols, fill_value=0)
+
+INPUT_DIM = len(surrogate_cols)  # 60 olmali
+print("Hizalanmis INPUT_DIM:", INPUT_DIM)
+
+# 3) Standard Scaler (MLP ile ayni)
+scaler = joblib.load("surrogate_scaler.joblib")
+
+with open("surrogate_cols.json", "r", encoding="utf-8") as f:
+    surrogate_cols = json.load(f)
+
+X_train_scaled = scaler.transform(X_train).astype(np.float32)
+X_test_scaled  = scaler.transform(X_test).astype(np.float32)
+
+
+# --- BOYUT KONTROLÜ ---
+REAL_INPUT_DIM = X_train.shape[1]
+print(f"Veri Seti Özellik Sayısı: {REAL_INPUT_DIM}")
+INPUT_DIM = REAL_INPUT_DIM  # Başlangıçta aynı yap
+if REAL_INPUT_DIM != INPUT_DIM:
+    print(f"UYARI: Kodun başındaki INPUT_DIM={INPUT_DIM} ama veri setinde {REAL_INPUT_DIM} sütun var.")
+    print(f"INPUT_DIM otomatik olarak {REAL_INPUT_DIM} yapılıyor.")
+    INPUT_DIM = REAL_INPUT_DIM
+
+# --- NORMAL ve GENERIC AYRIMI ---
+
+print("Saldırı kategorilerine göre ayrılıyor...")
+X_normal  = (y_train == "Normal").values
+X_generic = (y_train == "Generic").values
+
+print(f"Normal Veri: {len(X_normal)}, Generic Veri: {len(X_generic)}")
+
+# Tensor Dönüşümü
+real_samples = torch.tensor(X_normal, dtype=torch.float32).to(device)
+generic_samples = torch.tensor(X_generic, dtype=torch.float32).to(device)
+
+# DataLoader (Discriminator'ın gerçek verisi için)
+train_loader = DataLoader(TensorDataset(real_samples), batch_size=BATCH_SIZE, shuffle=True) # Sadece gerçek normal veriyi kullanır.
 
 # Generator Neural Network for creating adversarial examples
 class Generator(nn.Module):
@@ -16,8 +126,8 @@ class Generator(nn.Module):
         
         # Encoder: Compresses the input feature space
         self.net = nn.Sequential(
-            # Input: Real Fuzzer Sample + Noise (concatenated or added)
-            # Here we assume input is just the feature vector of the Fuzzer
+            # Input: Real Generic Sample + Noise (concatenated or added)
+            # Here we assume input is just the feature vector of the Generic sample
         
             # 1st Hidden Layer
             nn.Linear(input_dim, hidden_dim),
@@ -37,29 +147,25 @@ class Generator(nn.Module):
             # Output Layer: Generates the PERTURBATION vector, not the new row
             nn.Linear(hidden_dim, input_dim), 
             
-            # Tanh forces output between -1 and 1. 
-            # Useful if your data is MinMaxScaled. 
-            # If using StandardScaler, you might remove this or use a clamp later.
-            nn.Tanh() 
         )
 
-    def forward(self, real_fuzzer_samples, noise_vector=None):
+    def forward(self, real_generic_samples, noise_vector=None):
         """
         Args:
-            real_fuzzer_samples: Batch of original malicious traffic (Fuzzers)
+            real_generic_samples: Batch of original generic traffic samples
             noise_vector: Optional noise to ensure diversity
         """
         # If you want to use noise, concatenate it with the input features
         # For simplicity here, we assume the network creates variations based on weights
         
         # 1. Calculate the perturbation (the changes to make)
-        perturbation = self.net(real_fuzzer_samples)
+        perturbation = self.net(real_generic_samples)
         
         # 2. Add perturbation to the original sample
         # We might want to scale the perturbation to avoid destroying the attack
         # epsilon controls how much we are allowed to change the features
         epsilon = 0.2 
-        generated_sample = real_fuzzer_samples + (epsilon * perturbation)
+        generated_sample = real_generic_samples + (epsilon * perturbation)
         
         # 3. Clamp results to ensure valid feature range (e.g., 0 to 1)
         # Change min/max based on your scaler (0,1 for MinMax; -inf, inf for Standard)
@@ -72,7 +178,7 @@ class Discriminator(nn.Module):
         super(Discriminator, self).__init__()
         
         self.net = nn.Sequential(
-            # Input: A feature vector (either Real Normal or Adversarial Fuzzer)
+            # Input: A feature vector (either Real Normal or Adversarial Generic)
             nn.Linear(input_dim, hidden_dim * 2),
             nn.LeakyReLU(0.2), # LeakyReLU to avoid dying neurons, instead of ReLU doesn't zero out negative values
             nn.Dropout(0.3), # Regularization to prevent overfitting
@@ -94,120 +200,18 @@ lambda_gan = 0.5   # Importance of looking like Normal traffic (Discriminator)
 lambda_adv = 1.0   # Importance of fooling the IDS (Surrogate)
 
 # Instantiate models
-generator = Generator(input_dim=49) # Adjust input_dim based on your dataset
-discriminator = Discriminator(input_dim=49) # Adjust input_dim based on your dataset
-surrogate_mlp = SurrogateMLP(59) # Load your pretrained MLP here
+generator = Generator(input_dim=INPUT_DIM).to(device) # Adjust input_dim based on your dataset
+discriminator = Discriminator(input_dim=INPUT_DIM).to(device) # Adjust input_dim based on your dataset
+surrogate_mlp = SurrogateMLP(INPUT_DIM) # Load your pretrained MLP here
 surrogate_mlp.eval() # Surrogate weights must be frozen!
 
 # Optimizers
-optimizer_G = torch.optim.Adam(generator.parameters(), lr=0.0002) # Generator optimizer
-optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=0.0002) # Discriminator optimizer
+optimizer_G = torch.optim.Adam(generator.parameters(), lr=LR) # Generator optimizer
+optimizer_D = torch.optim.Adam(discriminator.parameters(), lr=LR) # Discriminator optimizer
 
 # Loss functions
 criterion_gan = nn.BCELoss() # Binary Cross Entropy for Real vs Fake
 
-X_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\X_train_fuzzer.csv", low_memory=False)
-y_train = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\y_train_fuzzer.csv", low_memory=False)
-X_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\X_test_fuzzer.csv", low_memory=False)
-y_test = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\mlp_data\y_test_fuzzer.csv", low_memory=False)
-
-# ==========================================
-# 1. AYARLAR
-# ==========================================
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Kullanılan cihaz: {device}")
-
-# MLP.py dosyasını import edebilmek için yol ayarı
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
-# Hiperparametreler
-INPUT_DIM = 59  # MLP ile aynı (59)
-HIDDEN_DIM = 64
-BATCH_SIZE = 64
-LR = 0.0002
-EPOCHS = 50
-
-# ==========================================
-# Ölçekleme (StandardScaler)
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-df_features = pd.DataFrame(X_train_scaled, columns=X_train.columns)
-
-# y_train'in indeksini sıfırlıyoruz ki df_features (0,1,2...) ile uyuşsun
-y_train = y_train.reset_index(drop=True)
-
-# --- BOYUT KONTROLÜ ---
-REAL_INPUT_DIM = X_train.shape[1]
-print(f"Veri Seti Özellik Sayısı: {REAL_INPUT_DIM}")
-if REAL_INPUT_DIM != INPUT_DIM:
-    print(f"UYARI: Kodun başındaki INPUT_DIM={INPUT_DIM} ama veri setinde {REAL_INPUT_DIM} sütun var.")
-    print(f"INPUT_DIM otomatik olarak {REAL_INPUT_DIM} yapılıyor.")
-    INPUT_DIM = REAL_INPUT_DIM
-
-# --- NORMAL ve FUZZER AYRIMI ---
-# Eğer 'attack_cat' sütunu yoksa, label 1'i Fuzzer varsayacağız.
-if 'attack_cat' in y_train.columns:
-    print("Saldırı kategorilerine göre ayrılıyor...")
-    normal_idx = y_train['attack_cat'] == 'Normal'
-    fuzzer_idx = y_train['attack_cat'] == 'Fuzzers'
-
-X_normal = df_features[normal_idx].values
-X_fuzzer = df_features[fuzzer_idx].values
-
-print(f"Normal Veri: {len(X_normal)}, Fuzzer Veri: {len(X_fuzzer)}")
-
-# Tensor Dönüşümü
-real_samples = torch.tensor(X_normal, dtype=torch.float32).to(device)
-fuzzer_samples = torch.tensor(X_fuzzer, dtype=torch.float32).to(device)
-
-# DataLoader (Discriminator'ın gerçek verisi için)
-train_loader = DataLoader(TensorDataset(real_samples), batch_size=BATCH_SIZE, shuffle=True) # Sadece gerçek normal veriyi kullanır.
-
-# ==========================================
-# 3. GAN MODELLERİ
-# ==========================================
-class Generator(nn.Module):
-    def __init__(self, input_dim, hidden_dim=64):
-        super(Generator, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim),
-            nn.Linear(hidden_dim, hidden_dim * 2),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim * 2),
-            nn.Linear(hidden_dim * 2, hidden_dim),
-            nn.ReLU(),
-            nn.BatchNorm1d(hidden_dim),
-            nn.Linear(hidden_dim, input_dim) # Tanh yok, çünkü StandardScaler kullanıyoruz
-        )
-
-    def forward(self, real_fuzzer_samples): 
-        perturbation = self.net(real_fuzzer_samples)
-        epsilon = 0.1 
-        generated_sample = real_fuzzer_samples + (epsilon * perturbation)
-        return generated_sample
-
-class Discriminator(nn.Module):
-    def __init__(self, input_dim, hidden_dim=64):
-        super(Discriminator, self).__init__()
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim * 2),
-            nn.LeakyReLU(0.2), 
-            nn.Dropout(0.3),
-            nn.Linear(hidden_dim * 2, hidden_dim), 
-            nn.LeakyReLU(0.2),
-            nn.Dropout(0.3),
-            nn.Linear(hidden_dim, 1),
-            nn.Sigmoid() 
-        )
-
-    def forward(self, x):
-        return self.net(x)
-
-# Modelleri Başlat
-generator = Generator(input_dim=INPUT_DIM).to(device)
-discriminator = Discriminator(input_dim=INPUT_DIM).to(device)
 
 # --- SURROGATE MODEL YÜKLEME ---
 # Buradaki 59 sayısı önemli!
@@ -252,11 +256,11 @@ for epoch in range(EPOCHS):
         loss_d_real = criterion_gan(pred_real, label_real)
 
         # B. Fake (Adversarial) Data
-        # Fuzzer verisinden rastgele örnek al (get_batch_of_fuzzer_data yerine)
-        idx = torch.randint(0, len(fuzzer_samples), (curr_batch_size,))
-        real_fuzzer_batch = fuzzer_samples[idx]
+        # Generic verisinden rastgele örnek al (get_batch_of_generic_data yerine)
+        idx = torch.randint(0, len(generic_samples), (curr_batch_size,))
+        real_generic_batch = generic_samples[idx]
         
-        fake_data = generator(real_fuzzer_batch)
+        fake_data = generator(real_generic_batch)
         
         pred_fake = discriminator(fake_data.detach()) 
         loss_d_fake = criterion_gan(pred_fake, label_fake)

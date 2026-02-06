@@ -1,3 +1,27 @@
 30.01.2026
 bütün attacklar olsun
 MLP kısmını bütün attack_cat'ler olsun 
+
+generic ve normal sample sayıları uyuşmuyor
+abdulstar kodundaki kısımları eklemeye çalış
+
+loss surrogate ve generator buradaki loss kullanmaya çalışacalım
+MLP ve discrimenator buradaki lossları kullanmaya çalış.
+loss function 2 hakemden aldığım geri bildirimi
+
+surrogate (fooling loss) loss'u neye göre hesaplıyoruz.
+ben buna Generic flow vereceğim. Gan kullanarak. MLP ID kandırmaya çalışıyorum.
+daha iyi surrogate loss u da eklemek istiyorum daha iyi hesaplasın.
+MLP normal sanıcak discrimenator attack sanıcak.
+
+Mesela bankayı hackleyeceğiz. banka ya OHE yapıyorsa veya yapmıyorsa ben bunu
+bunu nasıl kendi koduma entegre edeceğim
+
+
+flow u ben gönderiyorum o dataset oluşturuyor. 
+
+
+GAN kodunda iki loss sokma işini yapmaya çalışayım.
+OHE ile yap. RF gibi yap. -> MLP yap
+
+,

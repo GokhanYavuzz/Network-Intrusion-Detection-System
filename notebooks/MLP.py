@@ -1,4 +1,6 @@
+import json
 import os
+import joblib
 import pandas as pd
 import numpy as np
 import time
@@ -129,6 +131,11 @@ num_classes = len(le.classes_)
 print(f"Eğitim verisi Tensor shape: {X_train_tensor.shape}")
 print(f"Test verisi Tensor shape: {X_test_tensor.shape}")   
 
+joblib.dump(scaler, "surrogate_scaler.joblib")
+
+with open("surrogate_cols.json", "w", encoding="utf-8") as f:
+    json.dump(list(X_train.columns), f)
+
 # ==========================================
 # 4. MODEL MİMARİSİ (PyTorch)
 # ==========================================
@@ -247,3 +254,6 @@ if __name__ == "__main__":
     # GAN eğitimi sırasında tekrar yüklemek için:
     torch.save(model.state_dict(), "surrogate_mlp_model.pth")
     print("Model 'surrogate_mlp_model.pth' olarak kaydedildi.")
+
+    if __name__ == "__main__":
+        print("MLP eğitimi tamamlandı.")
