@@ -19,18 +19,22 @@ from sklearn.preprocessing import LabelEncoder
 # ==========================================
 
 print("Dosya okunuyor...")
-df = pd.read_csv('C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\forSurrogatemodel.csv', low_memory=False)
+dataWithAttack = pd.read_csv("C:\\Users\\Gökhan\\Desktop\\Gökhan\\nids-adversarial\\data\\with_attack_cat_clear_data.csv", low_memory=False)
 
-df['attack_cat'] = df['attack_cat'].str.strip() # Boşlukları temizle
+TARGET = 'attack_cat'
 
+print(f"Using target column: {TARGET} (unique classes: {dataWithAttack[TARGET].nunique()})")
+dataWithAttack[TARGET] = dataWithAttack[TARGET].astype(str)  # ensure consistent dtype
 
-# ==========================================
-# 1. AYARLAR VE CİHAZ SEÇİMİ
-# ==========================================
-attack_col = 'attack_cat'
+total = len(dataWithAttack)
+vc = dataWithAttack[TARGET].value_counts(dropna=False)
+vc_pct = (vc / total * 100).round(3)
+summary = pd.DataFrame({'count': vc, 'percent': vc_pct})
+print(f"Total rows: {total}\nUnique classes: {dataWithAttack[TARGET].nunique()}\n")
+print(summary)
 
 # GPU varsa kullan, yoksa CPU
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cpu" if torch.cuda.is_available() else "cpu")
 print(f"Kullanılan cihaz: {device}")
 
 # Hiperparametreler (Orijinal notebook ile uyumlu)
@@ -39,15 +43,93 @@ LEARNING_RATE = 1e-3
 EPOCHS = 10
 L2_REGULARIZATION = 1e-4  # Sklearn'deki 'alpha' parametresi PyTorch'ta weight_decay'dir
 
+def clean_attack_column(dataWithAttack, column_name='attack_cat'):
+    replacement_map = {
+        'backdoors': 'backdoor',
+        'fuzzers': 'fuzzers',  # olası boşluk hatası
+        'dos': 'dos',
+        'shellcode': 'shellcode',
+    }
+
+    dataWithAttack = dataWithAttack.copy()  # orijinali bozmamak için kopya
+    dataWithAttack[column_name] = (
+        dataWithAttack[column_name]
+          .astype('string')
+          .str.strip()
+          .str.lower()
+          .replace(replacement_map)
+          .str.capitalize()
+    )
+    return dataWithAttack
+
+dataWithAttack = clean_attack_column(dataWithAttack, 'attack_cat')
+
+if TARGET in dataWithAttack.columns:
+    total = len(dataWithAttack)
+    vc = dataWithAttack[TARGET].value_counts(dropna=False)
+    vc_pct = (vc / total * 100).round(3)
+    summary = pd.DataFrame({'count': vc, 'percent': vc_pct})
+    print(f"Total rows: {total}\nUnique classes: {dataWithAttack[TARGET].nunique()}\n")
+    print(summary)
+
 # ==========================================
-# 2. X ve y AYRIMI
+# 2. ÖZELLİK-HEDEF AYIRMA   
 # ==========================================
-# Etiket sütunlarını X'ten çıkar
+X = dataWithAttack.drop(columns=[TARGET, "Label"], errors="ignore")
+y = dataWithAttack[TARGET]
 
-X = df.drop(columns=[attack_col, "Label"], errors="ignore")
-y = df[attack_col]
+#Label encoding
+le = LabelEncoder()
+y_encoded = le.fit_transform(y)
+
+#Split data
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_encoded, 
+    test_size=0.2, 
+    random_state=42,
+    stratify=y_encoded  # ensure balanced split
+)
+
+X_train.shape, X_test.shape, y_train.shape, y_test.shape
+
+# TRAIN
+dataWithAttack.loc[X_train.index, "attack_cat"].value_counts()
+dataWithAttack.loc[X_train.index, "attack_cat"].value_counts(normalize=True).mul(100)
+
+# Test 
+dataWithAttack.loc[X_test.index, "attack_cat"].value_counts()
+dataWithAttack.loc[X_test.index, "attack_cat"].value_counts(normalize=True).mul(100)
 
 
+# 2) Kolon tiplerini belirleyelim
+# Sayısal/kategorik ayrımı: object ve category -> kategorik; geri kalan -> sayısal varsayımı
+def split_columns(X_train, target):
+    cols = [c for c in X_train.columns if c != target]
+    cat_cols = []
+    num_cols = []
+
+    for c in cols:
+        if X_train[c].dtype.name in ["object", "category"]:
+            cat_cols.append(c)
+        else:
+            # Çok-unique ve sayısal görünümlü object'ler varsa dönüştürmeyi düşünebilirsiniz.
+            num_cols.append(c)
+
+    return num_cols, cat_cols
+
+num_cols, cat_cols = split_columns(X_train, TARGET)
+print("Numeric:", len(num_cols), "\nCategorical:", len(cat_cols))
+
+dataWithAttack = dataWithAttack.drop(columns=['Label'])
+
+print("Categorical features:", cat_cols)
+
+# Counting the unique values of the categorical features...
+
+for col_name in X_train.columns:
+    if X_train[col_name].dtypes == 'object':
+        unique_cat = len(X_train[col_name].unique())
+        print("Feature '{col_name}' has {unique_cat} unique values.".format(col_name = col_name, unique_cat = unique_cat))
 
 
 def normalize_col(s: pd.Series):
@@ -67,44 +149,20 @@ def add_binary_flags(df: pd.DataFrame, col: str, keep: list, add_other=True, dro
         df.drop(columns=[col], inplace=True)
     return df
 
-df["attack_cat"] = df["attack_cat"].replace({"Backdoors":"Backdoor"})
+top_proto = pick_top_categories(X_train['proto'], k=6)
 
+X_train = add_binary_flags(X_train, 'proto', top_proto, add_other=True, drop_original=True)
+X_test  = add_binary_flags(X_test,  'proto', top_proto, add_other=True, drop_original=True)
 
-# ==========================================
-# 5. EĞİTİM / TEST BÖLME (%80 - %20)
-# ==========================================
-print("\nVeri bölünüyor (%80 Train - %20 Test)...")
+top_state = pick_top_categories(X_train['state'], k = 6)
 
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, 
-    test_size=0.20, 
-    random_state=42, 
-    stratify=y
-)
+X_train = add_binary_flags(X_train, 'state', top_state, add_other=True, drop_original=True)
+X_test  = add_binary_flags(X_test,  'state', top_state, add_other=True, drop_original=True)
 
-le = LabelEncoder()
-y_train_enc = le.fit_transform(y_train.astype(str))
-y_test_enc  = le.transform(y_test.astype(str))
+top_ct = pick_top_categories(X_train['ct_ftp_cmd'], k = 6)
 
-y_train_tensor = torch.tensor(y_train_enc, dtype=torch.long).to(device)
-y_test_tensor  = torch.tensor(y_test_enc,  dtype=torch.long).to(device)
-
-
-print(f"Eğitim seti boyutu: {X_train.shape[0]} örnek")
-print(f"Test seti boyutu: {X_test.shape[0]} örnek")
-
-# --- top-k sadece TRAIN'den; sonra ikisine de uygula ---
-for col in ["proto", "state", "ct_ftp_cmd"]:
-    if col in X_train.columns:
-        top = pick_top_categories(X_train[col], k=6)
-        X_train = add_binary_flags(X_train, col, top, add_other=True, drop_original=True)
-        X_test  = add_binary_flags(X_test,  col, top, add_other=True, drop_original=True)
-
-obj_cols = X_train.select_dtypes(include=["object", "category"]).columns.tolist()
-if obj_cols:
-    X_train = pd.get_dummies(X_train, columns=obj_cols, drop_first=False)
-    X_test  = pd.get_dummies(X_test,  columns=obj_cols, drop_first=False)
-    X_test  = X_test.reindex(columns=X_train.columns, fill_value=0)
+X_train = add_binary_flags(X_train, 'ct_ftp_cmd', top_ct, add_other=True, drop_original=True)
+X_test  = add_binary_flags(X_test,  'ct_ftp_cmd', top_ct, add_other=True, drop_original=True)
 
 
 num_classes = len(le.classes_)
@@ -122,6 +180,9 @@ X_test_scaled = scaler.transform(X_test) # Test verisini aynı scaler ile dönü
 # Numpy array'leri PyTorch Tensor'larına çevirme
 X_train_tensor = torch.tensor(X_train_scaled, dtype=torch.float32).to(device)
 X_test_tensor  = torch.tensor(X_test_scaled,  dtype=torch.float32).to(device)
+
+y_train_tensor = torch.tensor(y_train, dtype=torch.long)
+y_test_tensor  = torch.tensor(y_test,  dtype=torch.long)
 
 train_dataset = TensorDataset(X_train_tensor, y_train_tensor)
 train_loader  = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
