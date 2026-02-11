@@ -40,7 +40,7 @@ print(f"Kullanılan cihaz: {device}")
 # Hiperparametreler (Orijinal notebook ile uyumlu)
 BATCH_SIZE = 64 
 LEARNING_RATE = 1e-3 
-EPOCHS = 10
+EPOCHS = 40
 L2_REGULARIZATION = 1e-4  # Sklearn'deki 'alpha' parametresi PyTorch'ta weight_decay'dir
 
 def clean_attack_column(dataWithAttack, column_name='attack_cat'):
