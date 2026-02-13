@@ -131,7 +131,6 @@ for col_name in X_train.columns:
         unique_cat = len(X_train[col_name].unique())
         print("Feature '{col_name}' has {unique_cat} unique values.".format(col_name = col_name, unique_cat = unique_cat))
 
-
 def normalize_col(s: pd.Series):
     return s.fillna("unknown").astype(str).str.lower().str.strip()
 
@@ -163,7 +162,6 @@ top_ct = pick_top_categories(X_train['ct_ftp_cmd'], k = 6)
 
 X_train = add_binary_flags(X_train, 'ct_ftp_cmd', top_ct, add_other=True, drop_original=True)
 X_test  = add_binary_flags(X_test,  'ct_ftp_cmd', top_ct, add_other=True, drop_original=True)
-
 
 num_classes = len(le.classes_)
 
