@@ -12,7 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import torch.nn.functional as F
 
-def grad_norm(model: nn.Module):
+def grad_norm(model: nn.Module): # Tüm parametrelerin gradyanlarının L2 normunu hesaplar
     total = 0.0
     for p in model.parameters():
         if p.grad is None:
@@ -21,8 +21,7 @@ def grad_norm(model: nn.Module):
         total += float(torch.sum(g * g).item())
     return math.sqrt(total)
 
-def tstats(name, x: torch.Tensor):
-    # x GPU’da olabilir; istatistikleri guvenli cekelim
+def tstats(name, x: torch.Tensor): # Tensor istatistiklerini guvenli cekmek icin; NaN/Inf kontrolu ve temel istatistikler
     x_det = x.detach()
     return {
         "name": name,
@@ -35,7 +34,7 @@ def tstats(name, x: torch.Tensor):
         "inf": bool(torch.isinf(x_det).any().item()),
     }
 
-def param_norm(model: nn.Module):
+def param_norm(model: nn.Module): # Tüm parametrelerin L2 normunu hesaplar (gradyan değil, ağırlıkların kendisi)
     total = 0.0
     for p in model.parameters():
         w = p.detach()
@@ -48,17 +47,14 @@ def param_norm(model: nn.Module):
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Kullanilan cihaz: {device}")
 
-# =========================
-# 1) SURROGATE ARTIFACTS (ONCE OKU)
-# =========================
+# Surrogate modelin input feature'ları ve scaler'ı için gerekli dosyaları yükle
 with open("surrogate_cols.json", "r", encoding="utf-8") as f:
     surrogate_cols = json.load(f)
 
+# scaler'ı joblib ile yükle (StandardScaler nesnesi)
 scaler = joblib.load("surrogate_scaler.joblib")
 
-# =========================
-# 2) SURROGATE MODEL (MLP import YOK, BOYUTU state_dict'TEN AL)
-# =========================
+# Surrogate modelin mimarisiyle aynı yapıda bir MLP tanımla (input_dim ve num_classes'ı modelin ağırlıklarından çekerek)
 class SurrogateMLP(nn.Module):
     def __init__(self, input_dim: int, num_classes: int):
         super().__init__()
@@ -73,16 +69,19 @@ class SurrogateMLP(nn.Module):
         x = self.relu2(self.layer2(x))
         return self.output(x)
 
+# Surrogate modelin ağırlıklarını yükle ve eval moduna al; parametrelerin güncellenmesini kapat
 model_path = "surrogate_mlp_model.pth"
 if not os.path.exists(model_path):
     raise FileNotFoundError(f"{model_path} bulunamadi. Once MLP.py ile modeli kaydetmelisin.")
 
+# Model ağırlıklarını yükle
 state = torch.load(model_path, map_location="cpu")
 # output.weight shape: (num_classes, 64)
 num_classes = state["output.weight"].shape[0]
 # layer1.weight shape: (128, input_dim) -> input_dim buradan da cekilebilir
 state_input_dim = state["layer1.weight"].shape[1]
 
+# Surrogate modelin beklediği input_dim ile surrogate_cols uzunluğunun uyumlu olduğundan emin ol
 INPUT_DIM = len(surrogate_cols)
 if INPUT_DIM != state_input_dim:
     raise ValueError(
@@ -90,6 +89,7 @@ if INPUT_DIM != state_input_dim:
         f"Preprocessing hizalamasi hatali."
     )
 
+# Surrogate modeli oluştur ve ağırlıkları yükle
 surrogate_mlp = SurrogateMLP(INPUT_DIM, num_classes).to(device)
 surrogate_mlp.load_state_dict(state)
 surrogate_mlp.eval()
@@ -101,13 +101,11 @@ print(f"Surrogate yuklendi. input_dim={INPUT_DIM}, num_classes={num_classes}")
 # =========================
 # 3) DATA LOAD + FILTER (Generic/Normal)
 # =========================
-df = pd.read_csv(
-    r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\with_attack_cat_clear_data.csv",
-    low_memory=False
-)
+df = pd.read_csv(r"C:\Users\Gökhan\Desktop\Gökhan\nids-adversarial\data\with_attack_cat_clear_data.csv", low_memory=False)
 
 TARGET = "attack_cat"
 
+# attack_cat kolonunda benzer ama tam aynı olmayan kategoriler var (backdoors vs backdoor gibi); onları temizleyelim
 def clean_attack_column(df_in: pd.DataFrame, column_name="attack_cat") -> pd.DataFrame:
     replacement_map = {
         "backdoors": "backdoor",
@@ -128,6 +126,7 @@ def clean_attack_column(df_in: pd.DataFrame, column_name="attack_cat") -> pd.Dat
 
 df = clean_attack_column(df, TARGET)
 
+# Sadece "Generic" ve "Normal" sınıflarını tut; diğerlerini at; bu iki sınıfın dengeli olduğundan emin ol
 wanted = ["Generic", "Normal"]
 df = df[df[TARGET].isin(wanted)].copy()
 print(df[TARGET].value_counts(dropna=False))
@@ -158,6 +157,7 @@ print("Test  label dagilimi:\n", y_test.value_counts(normalize=True))
 #    - o flagleri uretir
 #    - sonra surrogate_cols'a reindex eder
 # =========================
+
 def normalize_col(s: pd.Series) -> pd.Series:
     return s.fillna("unknown").astype(str).str.lower().str.strip()
 
@@ -187,7 +187,8 @@ def add_flags_exact(df_in: pd.DataFrame, raw_col: str, cats: list) -> pd.DataFra
     df_out = pd.concat([df_out, flags], axis=1)
     return df_out
 
-# Train/Test icin ayni beklenen kategoriler
+# Train/Test icin ayni beklenen kategoriler surrogate modelin input feature'larina gore cikarilir;
+# bu kategorilere gore flagler uretilir; sonra surrogate_cols'a gore hizalanir (eksik kolonlar 0 ile doldurulur)
 proto_cats = expected_cats_from_surrogate(surrogate_cols, "is_proto_")
 state_cats = expected_cats_from_surrogate(surrogate_cols, "is_state_")
 ct_cats    = expected_cats_from_surrogate(surrogate_cols, "is_ct_ftp_cmd_")
@@ -249,7 +250,7 @@ print("normal mean first10:", np.mean(X_normal_scaled, axis=0)[:10])
 print("normal std  first10:", np.std(X_normal_scaled, axis=0)[:10])
 
 
-# CPU tensor yap, training loop icinde device'a tasi
+# GAN eğitiminde genellikle DataLoader kullanılır; bu yüzden TensorDataset ile sarıp DataLoader oluşturacağız.
 real_samples_cpu = torch.tensor(X_normal_scaled, dtype=torch.float32)
 generic_samples_cpu = torch.tensor(X_generic_scaled, dtype=torch.float32)
 
@@ -358,16 +359,13 @@ criterion_gan = nn.BCELoss() # Binary Cross Entropy for Real vs Fake
 # ==========================================
 # 4. EĞİTİM DÖNGÜSÜ
 # ==========================================
-lambda_gan = 0.5   
-lambda_adv = 1.0  
-
-# --- DIAGNOSTICS (her 200 batchte bir gibi) ---
+# GAN eğitiminde genellikle her epoch'ta tüm gerçek normal verilerle (real_normal_batch) ve rastgele seçilen generic verilerle (real_generic_batch) çalışılır.
 LOG_EVERY = 200
 
 print("GAN eğitimi başlıyor...")
+# Her epoch'ta tüm gerçek normal verilerle (real_normal_batch) ve rastgele seçilen generic verilerle (real_generic_batch) çalışılır.
 for epoch in range(EPOCHS):
     epoch_t0 = time.time()
-    # 'get_batch_of_normal_data' yerine gerçek DataLoader döngüsü:
     for i, (real_normal_batch,) in enumerate(normal_loader):
         
         real_normal_batch = real_normal_batch.to(device)
@@ -385,16 +383,17 @@ for epoch in range(EPOCHS):
         optimizer_D.zero_grad()
 
         # A. Real Normal Data
+        # real_normal_batch zaten normal verilerden geliyor; discriminatorun gerçek normal trafiği tanıyabilmesi için kullanılır
         pred_real = discriminator(real_normal_batch)
         loss_d_real = criterion_gan(pred_real, label_real)
 
         # B. Fake (Adversarial) Data
-        # Generic verisinden rastgele örnek al (get_batch_of_generic_data yerine)
+        # Generator, gerçek generic verilerden pertürbasyon ekleyerek sahte örnekler üretir; discriminatorun bu sahte örnekleri gerçek normalden ayırabilmesi için kullanılır
         idx = torch.randint(0, len(generic_samples_cpu), (curr_batch_size,))
-        real_generic_batch = generic_samples_cpu[idx].to(device)
-        
-        fake_data = generator(real_generic_batch)
-        
+
+        real_generic_batch = generic_samples_cpu[idx].to(device) # Gerçek generic verilerden rastgele bir batch seçilir ve cihaza gönderilir
+        fake_data = generator(real_generic_batch) # Generator, gerçek generic verilerden pertürbasyon ekleyerek sahte örnekler üretir
+
         pred_fake = discriminator(fake_data.detach()) 
         loss_d_fake = criterion_gan(pred_fake, label_fake)
 
@@ -403,10 +402,10 @@ for epoch in range(EPOCHS):
                   f"D(fake)mean={pred_fake.mean().item():.4f} | loss_d_real={loss_d_real.item():.4f} loss_d_fake={loss_d_fake.item():.4f}")
             print(" ", tstats("fake_data(detached)", fake_data))
 
-
+        # Toplam discriminator kaybı
         loss_d = (loss_d_real + loss_d_fake) / 2
         loss_d.backward()
-        optimizer_D.step()
+        optimizer_D.step() # Discriminator'un ağırlıklarını güncelle
 
         # -----------------
         # 2. Train Generator
@@ -426,10 +425,11 @@ for epoch in range(EPOCHS):
         target_label_idx = list(le.classes_).index('Normal') 
         target_label = torch.full((curr_batch_size,), target_label_idx, dtype=torch.long, device=device)
         
+        # Surrogate modelin çıktısı logits olduğu için CrossEntropyLoss kullanıyoruz;
+        #  bu loss, generatorun ürettiği örneklerin surrogate tarafından "Normal" olarak sınıflandırılmasını teşvik eder.
         criterion_adv = nn.CrossEntropyLoss()
         loss_g_adv = criterion_adv(gen_logits, target_label)
 
-        # Consistency yerine Adversarial Loss kullanıyoruz
         # lambda_adv katsayısını yukarıda tanımlamıştın (1.0 gibi)
         total_g_loss = (lambda_gan * loss_g_gan) + (lambda_adv * loss_g_adv)
         
