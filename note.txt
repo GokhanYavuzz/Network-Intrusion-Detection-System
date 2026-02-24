@@ -24,4 +24,5 @@ flow u ben gönderiyorum o dataset oluşturuyor.
 GAN kodunda iki loss sokma işini yapmaya çalışayım.
 OHE ile yap. RF gibi yap. -> MLP yap
 
-,
+12.02.2026
+Random forestun sonuçlarıyla eğitilecek MLP sonrası için
